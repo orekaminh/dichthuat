@@ -238,9 +238,42 @@
       max-width: 380px;
     }
   }
+
+  /* ----- Hộp thoại Chẩn đoán & Test Micro ----- */
+  #diagModal {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(0,0,0,0.78); display: none;
+    align-items: center; justify-content: center; padding: 12px;
+  }
+  #diagModal.open { display: flex; }
+  .diag-box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    max-width: 480px; width: 100%; max-height: 85vh; display: flex; flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5); overflow: hidden;
+  }
+  .diag-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .diag-body {
+    padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-size: 14px;
+  }
+  .diag-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .diag-card h4 { margin: 0 0 6px; font-size: 14px; }
+  .diag-log {
+    background: #090b0e; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-family: monospace; font-size: 12px; color: #a3e635;
+    max-height: 130px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4;
+  }
 </style>
 </head>
 <body>
+<div id="inAppBanner" style="display:none; background:#92400e; color:#fff; padding:10px 14px; font-size:13px; line-height:1.45; text-align:center;">
+  ⚠️ <b>LƯU Ý:</b> Bạn đang mở link trong ứng dụng (Zalo/Messenger/Facebook). Hãy bấm dấu <b>(⋯)</b> ở góc trên màn hình &rarr; chọn <b>"Mở bằng trình duyệt" (Chrome / Safari)</b> để cho phép dùng Micro!
+</div>
+
 <header>
   <div class="top-bar">
     <button id="btnStart">▶ BẮT ĐẦU NGHE</button>
@@ -259,6 +292,7 @@
       <button id="fsUp" title="Chữ to hơn">A+</button>
     </div>
     <button id="btnPip" title="Khung phụ đề nhỏ luôn nổi trên Zoom/Teams">📌 <span class="lbl-long">Cửa sổ nổi</span></button>
+    <button id="btnOpenDiag" title="Kiểm tra Micro & Chẩn đoán lỗi" style="background:#2563eb; color:#fff; border:0; padding:8px 10px; font-weight:600;">🧪 <span class="lbl-long">Test Micro</span></button>
     <button id="btnSave" title="Tải biên bản song ngữ (.txt)">💾 <span class="lbl-long">Lưu</span></button>
     <button id="btnSettings" title="Cài đặt">⚙️</button>
   </div>
@@ -297,6 +331,7 @@
   </label>
   <label><input type="checkbox" id="showEn" checked> Hiện câu gốc (chữ nhỏ)</label>
   <label><input type="checkbox" id="lightTheme"> Nền sáng</label>
+  <button id="btnOpenDiagSettings" style="background:#2563eb; color:#fff; border:0; padding:10px 14px; border-radius:10px; font-weight:600; width:100%; margin-top:4px;">🧪 Kiểm tra Micro & Chẩn đoán lỗi</button>
   <button id="btnClear">🗑️ Xóa lịch sử</button>
 </div>
 
@@ -313,12 +348,56 @@
         <li><b>📌 Cửa sổ nổi:</b> khung phụ đề nhỏ nằm đè lên cửa sổ họp. <b>💾 Lưu:</b> tải biên bản sau buổi họp.</li>
       </ol>
       <div class="note">Cần Google Chrome và Internet. Ngôn ngữ đối tác, micro, nền sáng/tối: bấm ⚙️.</div>
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <span>Micro không nghe thấy tiếng?</span>
+        <button id="btnOpenDiagHelp" style="background:#2563eb; color:#fff; border:0; padding:8px 14px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer;">🧪 Bấm để Test Micro ngay</button>
+      </div>
     </div>
   </div>
   <button id="toBottom">↓ Về câu mới nhất</button>
 </main>
 
 <div id="toast"></div>
+
+<!-- Modal Chẩn đoán & Test Micro -->
+<div id="diagModal">
+  <div class="diag-box">
+    <div class="diag-head">
+      <h3 style="margin:0; font-size:16px;">🧪 Chẩn đoán & Test Micro</h3>
+      <button id="btnCloseDiag" style="border:0; background:transparent; font-size:20px; cursor:pointer; padding:2px 8px; color:var(--text);">✕</button>
+    </div>
+    <div class="diag-body">
+      <!-- Môi trường -->
+      <div class="diag-card">
+        <h4>📱 Thông tin thiết bị & Trình duyệt</h4>
+        <div id="diagEnvInfo" style="line-height:1.6; font-size:13px; color:var(--sub);"></div>
+      </div>
+
+      <!-- Test 1: Phần cứng Micro -->
+      <div class="diag-card">
+        <h4>1️⃣ Test phần cứng Micro (Ghi âm & Nghe lại)</h4>
+        <p style="margin:0 0 8px; color:var(--sub); font-size:13px;">Bấm nút dưới đây rồi nói một câu bất kỳ trong 3 giây. Sau 3 giây hệ thống sẽ phát lại giọng nói của bạn qua loa điện thoại.</p>
+        <button id="btnDiagRecord" style="background:#2563eb; color:#fff; border:0; padding:10px 14px; width:100%; font-weight:600; border-radius:8px;">🎙️ Bắt đầu ghi âm thử (3 giây)</button>
+        <div id="diagRecStatus" style="margin-top:8px; font-size:13px; font-weight:500;"></div>
+        <audio id="diagAudio" controls style="width:100%; margin-top:8px; display:none;"></audio>
+      </div>
+
+      <!-- Test 2: Dịch vụ Nhận diện giọng nói -->
+      <div class="diag-card">
+        <h4>2️⃣ Test dịch vụ nhận diện giọng nói (Speech API)</h4>
+        <p style="margin:0 0 8px; color:var(--sub); font-size:13px;">Bấm "▶ Test nghe", nói một câu vào micro để kiểm tra xem hệ thống nhận được chữ gì và in log chi tiết.</p>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <select id="diagLang" style="flex:1; font-size:13px; padding:6px 8px;">
+            <option value="vi-VN">Tiếng Việt</option>
+            <option value="en-US">Tiếng Anh (Mỹ)</option>
+          </select>
+          <button id="btnDiagSR" style="background:var(--live); color:#000; border:0; padding:8px 14px; font-weight:700; border-radius:8px;">▶ Test nghe</button>
+        </div>
+        <div class="diag-log" id="diagLog">Chưa bắt đầu test. Bấm "▶ Test nghe" và nói vào micro.</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -970,6 +1049,196 @@
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && !['SELECT', 'INPUT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement.tagName)) {
       e.preventDefault(); running ? stop() : start();
+    }
+  });
+
+  // ---------- Kiểm tra & Chẩn đoán Micro ----------
+  const diagModal = $('diagModal');
+  const btnCloseDiag = $('btnCloseDiag');
+  const btnOpenDiag = $('btnOpenDiag');
+  const btnOpenDiagSettings = $('btnOpenDiagSettings');
+  const btnOpenDiagHelp = $('btnOpenDiagHelp');
+  const inAppBanner = $('inAppBanner');
+
+  const isInApp = /FBAN|FBAV|Instagram|Zalo|Line|Twitter|ByteLocale|Snapchat|MicroMessenger/i.test(navigator.userAgent);
+  if (isInApp && inAppBanner) inAppBanner.style.display = 'block';
+
+  function openDiag() {
+    if (running) stop();
+    diagModal.classList.add('open');
+    updateDiagEnv();
+  }
+  function closeDiag() {
+    diagModal.classList.remove('open');
+    if (diagRec) { try { diagRec.abort(); } catch {} diagRec = null; }
+    if (diagStream) { diagStream.getTracks().forEach(t => t.stop()); diagStream = null; }
+  }
+
+  btnOpenDiag && btnOpenDiag.addEventListener('click', openDiag);
+  btnOpenDiagSettings && btnOpenDiagSettings.addEventListener('click', openDiag);
+  btnOpenDiagHelp && btnOpenDiagHelp.addEventListener('click', openDiag);
+  btnCloseDiag && btnCloseDiag.addEventListener('click', closeDiag);
+  diagModal && diagModal.addEventListener('click', (e) => { if (e.target === diagModal) closeDiag(); });
+
+  function updateDiagEnv() {
+    const isHttps = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    let browserName = 'Google Chrome';
+    if (isInApp) browserName = '⚠️ Trình duyệt nhúng (Zalo/Facebook/Messenger) - KHÔNG hỗ trợ Micro!';
+    else if (/SamsungBrowser/i.test(navigator.userAgent)) browserName = 'Samsung Internet';
+    else if (/Edg/i.test(navigator.userAgent)) browserName = 'Microsoft Edge';
+    else if (/Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent)) browserName = 'Apple Safari';
+    else if (/Firefox/i.test(navigator.userAgent)) browserName = 'Mozilla Firefox';
+
+    $('diagEnvInfo').innerHTML = `
+      • <b>Trình duyệt:</b> ${browserName}<br>
+      • <b>Thiết bị:</b> ${isMobile ? (isIOS ? 'iPhone / iPad (iOS)' : 'Điện thoại / Tablet (Android)') : 'Máy tính (Desktop)'}<br>
+      • <b>Web Speech API:</b> ${SR ? '<span style="color:var(--live)">✅ Có hỗ trợ</span>' : '<span style="color:var(--danger)">❌ Không hỗ trợ (cần mở bằng Chrome)</span>'}<br>
+      • <b>Kết nối bảo mật HTTPS:</b> ${isHttps ? '<span style="color:var(--live)">✅ Đạt chuẩn (' + location.protocol + ')</span>' : '<span style="color:var(--danger)">❌ Chưa bảo mật (Micro bị chặn nếu không có HTTPS)</span>'}<br>
+      • <b>Bản cập nhật:</b> <span style="color:var(--accent)">v1.3 (Đã tích hợp Test Micro)</span>
+    `;
+  }
+
+  // Test 1: Ghi âm phần cứng 3s & Nghe lại
+  let diagStream = null, diagRecorder = null, diagChunks = [];
+  $('btnDiagRecord').addEventListener('click', async () => {
+    const btn = $('btnDiagRecord');
+    const status = $('diagRecStatus');
+    const player = $('diagAudio');
+    player.style.display = 'none';
+    btn.disabled = true;
+    diagChunks = [];
+
+    try {
+      status.textContent = 'Đang mở micro... Vui lòng bấm "Cho phép" nếu có thông báo.';
+      diagStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      btn.disabled = false;
+      status.innerHTML = `<span style="color:var(--danger)">❌ Lỗi Micro: ${err.name} - ${err.message}<br>👉 Khắc phục: Vào cài đặt máy cấp quyền Micro cho Chrome.</span>`;
+      return;
+    }
+
+    if (!('MediaRecorder' in window)) {
+      status.innerHTML = `<span style="color:var(--live)">✅ Mở Micro thành công! Micro hoạt động tốt.</span>`;
+      btn.disabled = false;
+      diagStream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    try {
+      diagRecorder = new MediaRecorder(diagStream);
+    } catch (e) {
+      status.innerHTML = `<span style="color:var(--live)">✅ Mở Micro thành công!</span>`;
+      btn.disabled = false;
+      diagStream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    diagRecorder.ondataavailable = (e) => { if (e.data.size > 0) diagChunks.push(e.data); };
+    diagRecorder.onstop = () => {
+      diagStream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(diagChunks, { type: diagRecorder.mimeType || 'audio/webm' });
+      player.src = URL.createObjectURL(blob);
+      player.style.display = 'block';
+      status.innerHTML = '<span style="color:var(--live)">✅ Thu âm xong! Đang phát lại qua loa:</span>';
+      player.play().catch(() => {});
+      btn.disabled = false;
+      btn.textContent = '🎙️ Ghi âm thử lại (3 giây)';
+    };
+
+    diagRecorder.start();
+    let left = 3;
+    btn.textContent = `🔴 Đang thu âm... Hãy nói to: ${left}s`;
+    status.textContent = 'Nói thử 1 câu bất kỳ vào micro ngay bây giờ...';
+    const timer = setInterval(() => {
+      left--;
+      if (left > 0) {
+        btn.textContent = `🔴 Đang thu âm... Hãy nói to: ${left}s`;
+      } else {
+        clearInterval(timer);
+        btn.textContent = '⏳ Đang xử lý phát lại...';
+        try { diagRecorder.stop(); } catch {}
+      }
+    }, 1000);
+  });
+
+  // Test 2: Speech Recognition Test
+  let diagRec = null;
+  $('btnDiagSR').addEventListener('click', () => {
+    const btn = $('btnDiagSR');
+    const logBox = $('diagLog');
+    const lang = $('diagLang').value;
+
+    const addLog = (msg) => {
+      const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      logBox.textContent += `[${time}] ${msg}\n`;
+      logBox.scrollTop = logBox.scrollHeight;
+    };
+
+    if (diagRec) {
+      try { diagRec.abort(); } catch {}
+      diagRec = null;
+      btn.textContent = '▶ Test nghe';
+      btn.style.background = 'var(--live)';
+      btn.style.color = '#000';
+      addLog('⏹ Đã dừng test.');
+      return;
+    }
+
+    if (!SR) {
+      logBox.textContent = '';
+      addLog('❌ LỖI: Trình duyệt này KHÔNG hỗ trợ nhận dạng giọng nói.');
+      addLog('👉 Hãy mở bằng ứng dụng Google Chrome chính thức trên Android hoặc Safari trên iPhone.');
+      return;
+    }
+
+    logBox.textContent = '';
+    addLog(`🚀 Khởi tạo nhận dạng giọng nói (${lang})...`);
+    diagRec = new SR();
+    diagRec.lang = lang;
+    diagRec.interimResults = true;
+    diagRec.maxAlternatives = 1;
+    diagRec.continuous = false;
+
+    btn.textContent = '■ Dừng';
+    btn.style.background = 'var(--danger)';
+    btn.style.color = '#fff';
+
+    diagRec.onstart = () => addLog('🟢 onstart: Đã kết nối với dịch vụ giọng nói! Hãy nói vào micro...');
+    diagRec.onaudiostart = () => addLog('🔊 onaudiostart: Đang bắt đầu thu âm thanh...');
+    diagRec.onsoundstart = () => addLog('🎵 onsoundstart: Đã có tín hiệu âm thanh vào micro...');
+    diagRec.onspeechstart = () => addLog('🗣️ onspeechstart: ĐÃ NHẬN RA GIỌNG NÓI!');
+    diagRec.onspeechend = () => addLog('🤫 onspeechend: Đã dừng nói.');
+    diagRec.onsoundend = () => addLog('🔇 onsoundend: Âm thanh kết thúc.');
+    diagRec.onaudioend = () => addLog('🛑 onaudioend: Đã ngắt thu âm.');
+    diagRec.onresult = (e) => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      const isFinal = e.results[0].isFinal;
+      addLog(`📝 onresult (${isFinal ? 'CHỐT' : 'tạm'}): "${t}"`);
+    };
+    diagRec.onerror = (e) => {
+      addLog(`❌ onerror: ${e.error}`);
+      if (e.error === 'not-allowed') addLog('👉 Bạn chưa cấp quyền micro cho Chrome hoặc hệ thống.');
+      else if (e.error === 'no-speech') addLog('👉 Không nhận thấy tiếng nói (hãy nói to và gần micro hơn).');
+      else if (e.error === 'network') addLog('👉 Lỗi mạng: Không kết nối được tới máy chủ giọng nói của Google.');
+      else if (e.error === 'service-not-allowed') addLog('👉 Dịch vụ giọng nói bị khóa hoặc bị app khác chiếm quyền.');
+    };
+    diagRec.onend = () => {
+      addLog('🏁 onend: Kết thúc phiên nghe.');
+      btn.textContent = '▶ Test nghe';
+      btn.style.background = 'var(--live)';
+      btn.style.color = '#000';
+      diagRec = null;
+    };
+
+    try {
+      diagRec.start();
+    } catch (err) {
+      addLog(`❌ Lỗi khi khởi động start(): ${err.message}`);
+      btn.textContent = '▶ Test nghe';
+      btn.style.background = 'var(--live)';
+      btn.style.color = '#000';
+      diagRec = null;
     }
   });
 
