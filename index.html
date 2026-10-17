@@ -524,6 +524,8 @@
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 680;
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   let pipWin = null, pipFeed = null;
+  let rec = null, running = false, audioTrack = null, captureStream = null, wakeLock = null, restartCount = 0;
+  let lastResultAt = 0, lastSoundAt = 0, warned = '', watchdog = null;
   let source = store.get('source', 'mic');
   let fontSize = store.get('fs2', isMobile ? 24 : 34);
   if (!('documentPictureInPicture' in window) || isMobile) els.btnPip.style.display = 'none';
@@ -857,8 +859,6 @@
   }
 
   // ---------- Nhận dạng giọng nói ----------
-  let rec = null, running = false, audioTrack = null, captureStream = null, wakeLock = null, restartCount = 0;
-  let lastResultAt = 0, lastSoundAt = 0, warned = '', watchdog = null;
 
   // Chrome rất lâu mới chốt câu khi người nói liên tục → tự cắt thành câu ngắn (~10–16 từ),
   // ưu tiên cắt trước các từ nối (and, but, so…) để mỗi khung là một ý trọn vẹn.
