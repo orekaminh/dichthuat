@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
+<title>Phiên dịch trực tiếp</title>
+<style>
+  :root {
+    --bg: #101216; --panel: #1a1d24; --card: #171a20; --line: #2b303b;
+    --text: #ffffff; --sub: #9ea6b5; --muted: #7d8595;
+    --accent: #facc15; --live: #22c55e; --danger: #ef4444; --btn: #252a35;
+    --fs: 34px;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f1ea; --panel: #ffffff; --card: #ffffff; --line: #ddd6c8;
+    --text: #111111; --sub: #4b5563; --muted: #6b7280;
+    --accent: #b45309; --btn: #ece7dc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    display: flex; flex-direction: column;
+    -webkit-text-size-adjust: 100%;
+  }
+  button, select {
+    font: inherit; font-size: 16px; color: var(--text); background: var(--btn);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; cursor: pointer;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  button:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ----- Thanh điều khiển ----- */
+  header {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: max(10px, env(safe-area-inset-top, 10px)) max(14px, env(safe-area-inset-right, 14px)) 10px max(14px, env(safe-area-inset-left, 14px));
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .top-bar { display: contents; }
+  .actions-bar { display: contents; }
+  .lbl-short { display: none; }
+  .lbl-long { display: inline; }
+
+  #btnStart {
+    background: var(--live); color: #04140a; font-weight: 700; font-size: 18px;
+    border: 0; padding: 11px 22px; min-width: 190px;
+  }
+  #btnStart.running { background: var(--danger); color: #fff; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: #3b82f6; color: #fff; }
+  .font-seg button { min-width: 38px; padding: 9px 12px; font-weight: 600; }
+  .font-seg button:first-child { border-right: 1px solid var(--line); }
+  .spacer { flex: 1; }
+  #status {
+    display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--sub);
+    order: 99; margin-left: auto;
+  }
+  #dot { width: 12px; height: 12px; border-radius: 50%; background: #666; flex: none; }
+  #dot.on { background: var(--live); box-shadow: 0 0 8px var(--live); animation: pulse 1.4s infinite; }
+  #dot.err { background: var(--danger); }
+  @keyframes pulse { 50% { opacity: .4; } }
+  #meter { width: 60px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  #meterBar { display: block; height: 100%; width: 0; background: var(--live); transition: width .08s linear; }
+
+  #settings {
+    display: none; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+    padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 15px;
+  }
+  #settings.open { display: flex; }
+  #settings label { display: flex; align-items: center; gap: 8px; color: var(--sub); }
+  #settings input[type=checkbox] { width: 20px; height: 20px; }
+  #micSel { max-width: 260px; }
+
+  /* ----- Phụ đề ----- */
+  main { flex: 1; min-height: 0; position: relative; }
+  #feed { height: 100%; overflow-y: auto; padding: 16px 16px 40vh; scroll-behavior: smooth; }
+  .card {
+    max-width: 1100px; margin: 0 auto 14px; padding: 14px 20px;
+    background: var(--card); border: 1px solid var(--line); border-left: 6px solid transparent;
+    border-radius: 12px; opacity: .45; transition: opacity .3s;
+  }
+  /* 3 câu gần nhất sáng rõ, câu cũ mờ đi để mắt tập trung vào câu mới */
+  .card:nth-last-child(-n+3) { opacity: 1; }
+  .card.newest { border-left-color: var(--accent); }
+  .vi { font-size: var(--fs); line-height: 1.4; font-weight: 600; }
+  .en { font-size: calc(var(--fs) * .55); line-height: 1.45; color: var(--sub); margin-top: 6px; }
+  .card.pending .vi { color: var(--sub); font-weight: 500; }
+  .card.pending .vi::after { content: " …"; }
+  body.no-en .en { display: none; }
+  .waiting { color: var(--muted); font-style: italic; }
+
+  #toBottom {
+    position: absolute; right: 24px; bottom: 24px; display: none;
+    background: var(--accent); color: #111; font-weight: 700; border: 0; border-radius: 30px;
+    padding: 12px 20px; box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  }
+  #help {
+    max-width: 1100px; margin: 0 auto; padding: 18px 22px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; font-size: 17px; line-height: 1.6;
+  }
+  #help ol { margin: 8px 0 0; padding-left: 22px; }
+  #help .note { margin-top: 10px; color: var(--muted); font-size: 15px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 9;
+    background: #2a1416; border: 1px solid var(--danger); color: #ffd7d7;
+    padding: 12px 18px; border-radius: 10px; font-size: 16px; display: none; max-width: 92%;
+  }
+
+  /* ----- Cửa sổ nổi: chỉ 2 câu mới nhất ----- */
+  body.pip { padding: 8px 10px; overflow: hidden; display: block; }
+  body.pip .card { margin: 0 0 8px; padding: 8px 14px; opacity: 1; }
+  body.pip .card:not(.newest) { opacity: .6; }
+
+  /* ----- Tối ưu hiển thị cho Điện thoại (màn hình dọc <= 680px) ----- */
+  @media (max-width: 680px) {
+    :root { --fs: 23px; }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: max(8px, env(safe-area-inset-top, 8px)) 10px 8px;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+    }
+    #btnStart {
+      min-width: 0;
+      flex: 1;
+      padding: 11px 16px;
+      font-size: 16px;
+      white-space: nowrap;
+      border-radius: 10px;
+    }
+    #status {
+      order: unset;
+      margin-left: 0;
+      font-size: 13px;
+      flex: 0 0 auto;
+      gap: 6px;
+      max-width: 48%;
+    }
+    #statusText {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 95px;
+    }
+    #meter { width: 44px; height: 7px; }
+    #dot { width: 10px; height: 10px; }
+
+    .actions-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+    }
+    .actions-bar button, .actions-bar select {
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    .seg button {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .font-seg button {
+      min-width: 32px;
+      padding: 8px 9px;
+    }
+    .lbl-long { display: none; }
+    .lbl-short { display: inline; }
+
+    #btnPip { display: none !important; }
+    #btnSave .lbl-long { display: none; }
+    #btnSettings { padding: 8px 10px; font-size: 15px; }
+
+    /* Cài đặt trên điện thoại */
+    #settings {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      padding: 14px 14px;
+      font-size: 14px;
+    }
+    #settings label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      gap: 10px;
+    }
+    #settings select {
+      max-width: 55%;
+      flex: 1;
+      font-size: 14px;
+      padding: 8px 10px;
+    }
+    #micSel { max-width: 55%; }
+    #btnClear { width: 100%; margin-top: 6px; padding: 10px; }
+
+    /* Phụ đề trên điện thoại */
+    #feed { padding: 12px 10px 30vh; }
+    .card {
+      margin: 0 auto 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border-left-width: 4px;
+    }
+    .vi { font-size: var(--fs); line-height: 1.35; }
+    .en { font-size: calc(var(--fs) * 0.62); line-height: 1.4; margin-top: 4px; }
+    #help {
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.55;
+      border-radius: 10px;
+    }
+    #help ol { margin-top: 6px; padding-left: 18px; }
+    #toBottom {
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      padding: 10px 16px;
+      font-size: 14px;
+    }
+    #toast {
+      font-size: 14px;
+      padding: 10px 14px;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      width: calc(100% - 24px);
+      max-width: 380px;
+    }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="top-bar">
+    <button id="btnStart">▶ BẮT ĐẦU NGHE</button>
+    <div id="status">
+      <span id="meter" title="Mức âm thanh đang thu vào. Thanh đứng yên = không nghe thấy gì."><i id="meterBar"></i></span>
+      <span id="dot"></span><span id="statusText">Sẵn sàng</span>
+    </div>
+  </div>
+  <div class="actions-bar">
+    <div class="seg" id="srcSeg">
+      <button data-src="mic" class="on" title="Họp trực tiếp: nghe qua micro">🎤 <span class="lbl-long">Họp trực tiếp</span><span class="lbl-short">Trực tiếp</span></button>
+      <button data-src="system" title="Họp online / video: nghe âm thanh trong máy">🖥️ <span class="lbl-long">Họp online</span><span class="lbl-short">Online</span></button>
+    </div>
+    <div class="seg font-seg">
+      <button id="fsDown" title="Chữ nhỏ hơn">A−</button>
+      <button id="fsUp" title="Chữ to hơn">A+</button>
+    </div>
+    <button id="btnPip" title="Khung phụ đề nhỏ luôn nổi trên Zoom/Teams">📌 <span class="lbl-long">Cửa sổ nổi</span></button>
+    <button id="btnSave" title="Tải biên bản song ngữ (.txt)">💾 <span class="lbl-long">Lưu</span></button>
+    <button id="btnSettings" title="Cài đặt">⚙️</button>
+  </div>
+</header>
+
+<div id="settings">
+  <label>Đối tác nói
+    <select id="srcLang">
+      <option value="en-US" data-tr="en">Tiếng Anh (Mỹ)</option>
+      <option value="en-GB" data-tr="en">Tiếng Anh (Anh)</option>
+      <option value="en-IN" data-tr="en">Tiếng Anh (Ấn Độ)</option>
+      <option value="en-SG" data-tr="en">Tiếng Anh (Singapore)</option>
+      <option value="ko-KR" data-tr="ko">Tiếng Hàn</option>
+      <option value="ja-JP" data-tr="ja">Tiếng Nhật</option>
+      <option value="cmn-Hans-CN" data-tr="zh-CN">Tiếng Trung (Phổ thông)</option>
+      <option value="cmn-Hant-TW" data-tr="zh-TW">Tiếng Trung (Đài Loan)</option>
+      <option value="yue-Hant-HK" data-tr="zh-TW">Tiếng Quảng Đông</option>
+      <option value="th-TH" data-tr="th">Tiếng Thái</option>
+      <option value="fr-FR" data-tr="fr">Tiếng Pháp</option>
+      <option value="de-DE" data-tr="de">Tiếng Đức</option>
+      <option value="es-ES" data-tr="es">Tiếng Tây Ban Nha</option>
+      <option value="ru-RU" data-tr="ru">Tiếng Nga</option>
+      <option value="id-ID" data-tr="id">Tiếng Indonesia</option>
+      <option value="ms-MY" data-tr="ms">Tiếng Malaysia</option>
+    </select>
+  </label>
+  <label>Dịch sang
+    <select id="tgtLang">
+      <option value="vi">Tiếng Việt</option>
+      <option value="en">Tiếng Anh</option>
+    </select>
+  </label>
+  <label id="micWrap">Micro
+    <select id="micSel"><option value="">Micro mặc định</option></select>
+  </label>
+  <label><input type="checkbox" id="showEn" checked> Hiện câu gốc (chữ nhỏ)</label>
+  <label><input type="checkbox" id="lightTheme"> Nền sáng</label>
+  <button id="btnClear">🗑️ Xóa lịch sử</button>
+</div>
+
+<main>
+  <div id="feed">
+    <div id="help">
+      <b>Cách dùng</b>
+      <ol>
+        <li><b>Họp trực tiếp:</b> bấm <b>🎤 Họp trực tiếp</b>, đặt laptop hướng về phía đối tác, bấm <b>BẮT ĐẦU NGHE</b>.
+          Khi mình nói tiếng Việt, bấm phím <b>Space</b> để tạm dừng.</li>
+        <li><b>Họp online / xem video:</b> bấm <b>🖥️ Họp online</b> → <b>BẮT ĐẦU NGHE</b> → chọn tab cuộc họp/YouTube
+          (hoặc <b>Toàn màn hình</b> nếu dùng app Zoom/Teams) và <b>bật “Chia sẻ âm thanh”</b>.</li>
+        <li>Mỗi khung là một câu: <b>chữ to là tiếng Việt</b>, chữ nhỏ bên dưới là câu gốc. Câu đang nói hiện màu xám, nói xong chuyển sang màu trắng.</li>
+        <li><b>📌 Cửa sổ nổi:</b> khung phụ đề nhỏ nằm đè lên cửa sổ họp. <b>💾 Lưu:</b> tải biên bản sau buổi họp.</li>
+      </ol>
+      <div class="note">Cần Google Chrome và Internet. Ngôn ngữ đối tác, micro, nền sáng/tối: bấm ⚙️.</div>
+    </div>
+  </div>
+  <button id="toBottom">↓ Về câu mới nhất</button>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  const els = {
+    srcSeg: $('srcSeg'), srcLang: $('srcLang'), tgtLang: $('tgtLang'), btnStart: $('btnStart'),
+    fsUp: $('fsUp'), fsDown: $('fsDown'), btnPip: $('btnPip'), btnSave: $('btnSave'), btnClear: $('btnClear'),
+    btnSettings: $('btnSettings'), settings: $('settings'), showEn: $('showEn'), lightTheme: $('lightTheme'),
+    dot: $('dot'), statusText: $('statusText'), feed: $('feed'), help: $('help'), toBottom: $('toBottom'),
+    toast: $('toast'), micSel: $('micSel'), micWrap: $('micWrap'), meterBar: $('meterBar'),
+  };
+
+  // ---------- Lưu cài đặt ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('pd_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('pd_' + k, JSON.stringify(v)); } catch {} },
+  };
+
+  let pipWin = null, pipFeed = null;
+  let source = store.get('source', 'mic');
+  let fontSize = store.get('fs2', window.innerWidth <= 680 ? 24 : 34);
+  if (!('documentPictureInPicture' in window)) els.btnPip.style.display = 'none';
+  els.srcLang.value = store.get('srcLang', 'en-US');
+  els.tgtLang.value = store.get('tgtLang', 'vi');
+  if (!els.srcLang.value) els.srcLang.value = 'en-US';
+  els.showEn.checked = store.get('showEn', true);
+  els.lightTheme.checked = store.get('light', false);
+
+  function applyFont() {
+    document.documentElement.style.setProperty('--fs', fontSize + 'px');
+    if (pipWin) pipWin.document.documentElement.style.setProperty('--fs', Math.max(18, Math.round(fontSize * 0.75)) + 'px');
+  }
+  function applySource() {
+    els.srcSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.src === source));
+    els.micWrap.style.display = source === 'mic' ? '' : 'none';
+  }
+  function applyView() {
+    document.body.classList.toggle('no-en', !els.showEn.checked);
+    const theme = els.lightTheme.checked ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    if (pipWin) {
+      pipWin.document.body.classList.toggle('no-en', !els.showEn.checked);
+      pipWin.document.documentElement.dataset.theme = theme;
+    }
+  }
+
+  // Danh sách micro (tên thiết bị chỉ hiện sau khi đã cấp quyền micro)
+  async function loadMics() {
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId !== 'communications');
+      const saved = store.get('mic', '');
+      els.micSel.innerHTML = '<option value="">Micro mặc định</option>' + devs.filter(d => d.deviceId !== 'default')
+        .map(d => `<option value="${d.deviceId}">${(d.label || 'Micro').replace(/</g, '&lt;')}</option>`).join('');
+      if (saved && [...els.micSel.options].some(o => o.value === saved)) { els.micSel.value = saved; return; }
+      // Chưa chọn micro nào: ưu tiên micro của laptop, tránh micro tai nghe Bluetooth
+      const laptop = [...els.micSel.options].find(o => o.value && /realtek|array|built-?in|internal|integrated|laptop/i.test(o.text) && !/bluetooth|hands-?free|headset|soundpeats/i.test(o.text));
+      if (laptop) els.micSel.value = laptop.value;
+    } catch {}
+  }
+  loadMics();
+  navigator.mediaDevices && navigator.mediaDevices.addEventListener('devicechange', loadMics);
+  applyFont(); applySource(); applyView();
+
+  // ---------- Trạng thái ----------
+  function setStatus(text, mode) {
+    els.statusText.textContent = text;
+    els.dot.className = mode || '';
+  }
+  let toastTimer;
+  function toast(msg, ms = 7000) {
+    els.toast.textContent = msg; els.toast.style.display = 'block';
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => els.toast.style.display = 'none', ms);
+  }
+
+  // ---------- Dịch ----------
+  const cache = new Map();
+  const srcTr = () => els.srcLang.selectedOptions[0].dataset.tr;
+  const tgt = () => els.tgtLang.value;
+  let builtin = null, builtinKey = '';
+
+  async function gtx(text, sl, tl) {
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t'
+      + '&sl=' + encodeURIComponent(sl) + '&tl=' + encodeURIComponent(tl) + '&q=' + encodeURIComponent(text);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return (j[0] || []).map(x => x[0]).join('');
+  }
+  // Dự phòng: bộ dịch có sẵn trong Chrome (chạy trên máy)
+  async function chromeTranslate(text, sl, tl) {
+    if (!('Translator' in self)) throw new Error('no builtin');
+    const key = sl + '>' + tl;
+    if (!builtin || builtinKey !== key) {
+      builtin = await self.Translator.create({ sourceLanguage: sl.split('-')[0], targetLanguage: tl });
+      builtinKey = key;
+    }
+    return builtin.translate(text);
+  }
+  async function translate(text) {
+    text = text.trim();
+    if (!text) return '';
+    const sl = srcTr(), tl = tgt();
+    if (sl === tl) return text;
+    const key = sl + '|' + tl + '|' + text;
+    if (cache.has(key)) return cache.get(key);
+    let out;
+    try { out = await gtx(text, sl, tl); }
+    catch (e) {
+      try { out = await chromeTranslate(text, sl, tl); }
+      catch {
+        await new Promise(r => setTimeout(r, 400));
+        out = await gtx(text, sl, tl); // thử lại một lần
+      }
+    }
+    if (cache.size > 500) cache.clear();
+    cache.set(key, out);
+    return out;
+  }
+  // Viết hoa chữ đầu câu cho dễ đọc
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+  // ---------- Hiển thị: mỗi câu là một khung, tiếng Việt to – câu gốc nhỏ ----------
+  // Câu gốc và tiếng Việt luôn được cập nhật CÙNG LÚC từ cùng một đoạn chữ, nên luôn khớp nhau.
+  let items = store.get('history', []).map(it => ({ t: it.t, o: it.o, tr: it.tr, pending: false }));
+
+  function fmtTime(ts) { return new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  function saveHistory() { store.set('history', items.filter(it => !it.pending).slice(-1000).map(({ t, o, tr }) => ({ t, o, tr }))); }
+
+  function fillCard(div, it) {
+    div.className = 'card' + (it.pending ? ' pending' : '');
+    div.innerHTML = '<div class="vi"></div><div class="en"></div>';
+    const vi = div.firstChild, en = div.lastChild;
+    if (it.tr) vi.textContent = cap(it.tr);
+    else { vi.textContent = 'Đang nghe'; vi.classList.add('waiting'); }
+    en.textContent = it.o ? cap(it.o) : '';
+  }
+  function markNewest(container) {
+    const cards = container.querySelectorAll('.card');
+    cards.forEach(c => c.classList.remove('newest'));
+    // Câu mới nhất có nội dung tiếng Việt được đánh dấu viền vàng
+    for (let i = cards.length - 1; i >= 0; i--) {
+      if (!cards[i].querySelector('.waiting')) { cards[i].classList.add('newest'); break; }
+    }
+  }
+  function nearBottom() { const f = els.feed; return f.scrollHeight - f.scrollTop - f.clientHeight < f.clientHeight * 0.45; }
+  function scrollToEnd() {
+    // Đưa câu mới nhất lên khoảng giữa màn hình (phía dưới để trống), mắt không phải nhìn sát mép dưới
+    const cards = els.feed.querySelectorAll('.card');
+    const last = cards[cards.length - 1];
+    if (!last) return;
+    els.feed.scrollTop = last.offsetTop + last.offsetHeight - els.feed.clientHeight * 0.62;
+    els.toBottom.style.display = 'none';
+  }
+  function renderPip() {
+    if (!pipFeed) return;
+    pipFeed.innerHTML = '';
+    items.slice(-2).forEach(it => { const d = pipWin.document.createElement('div'); fillCard(d, it); pipFeed.appendChild(d); });
+    markNewest(pipFeed);
+  }
+  function updateCard(it) {
+    const stick = nearBottom();
+    if (!it._el) { it._el = document.createElement('div'); els.feed.appendChild(it._el); els.help.style.display = 'none'; }
+    fillCard(it._el, it);
+    markNewest(els.feed);
+    if (stick) scrollToEnd(); else els.toBottom.style.display = 'block';
+    renderPip();
+  }
+  function renderAll() {
+    els.feed.querySelectorAll('.card').forEach(n => n.remove());
+    els.help.style.display = items.length ? 'none' : '';
+    items.forEach(it => { it._el = document.createElement('div'); fillCard(it._el, it); els.feed.appendChild(it._el); });
+    markNewest(els.feed);
+    els.feed.style.scrollBehavior = 'auto'; scrollToEnd(); els.feed.style.scrollBehavior = '';
+    renderPip();
+  }
+
+  // Câu đang nói: cập nhật tối đa ~1 lần/giây cho đỡ nhảy chữ
+  let pendingItem = null, pendingText = '', trTimer = null, trBusy = false, lastTrAt = 0;
+  function onInterim(text) {
+    text = text.trim();
+    if (!text) return;
+    if (!pendingItem) { pendingItem = { t: Date.now(), o: '', tr: '', pending: true }; items.push(pendingItem); updateCard(pendingItem); }
+    pendingText = text;
+    if (trTimer || trBusy) return;
+    trTimer = setTimeout(runInterim, Math.max(0, 900 - (Date.now() - lastTrAt)));
+  }
+  async function runInterim() {
+    trTimer = null;
+    const it = pendingItem, text = pendingText;
+    if (!it || !text) return;
+    trBusy = true; lastTrAt = Date.now();
+    try {
+      const tr = await translate(text);
+      if (it === pendingItem && it.pending) { it.o = text; it.tr = tr; updateCard(it); }
+    } catch {}
+    trBusy = false;
+    if (pendingItem && pendingText && pendingText !== text) onInterim(pendingText);
+  }
+  // Chốt một câu: dịch lại toàn bộ câu hoàn chỉnh rồi hiện cả hai dòng cùng lúc
+  async function commit(text) {
+    text = text.trim();
+    const it = pendingItem;
+    pendingItem = null; pendingText = '';
+    if (!text) { if (it) { items.splice(items.indexOf(it), 1); it._el && it._el.remove(); renderPip(); } return; }
+    const item = it || { t: Date.now(), o: '', tr: '', pending: true };
+    if (!it) { items.push(item); updateCard(item); }
+    let tr;
+    try { tr = await translate(text); }
+    catch { tr = '[Lỗi dịch – kiểm tra Internet]'; }
+    item.o = text; item.tr = tr; item.pending = false;
+    updateCard(item);
+    saveHistory();
+  }
+
+  // ---------- Nhận dạng giọng nói ----------
+  let rec = null, running = false, audioTrack = null, captureStream = null, wakeLock = null, restartCount = 0;
+  let lastResultAt = 0, lastSoundAt = 0, warned = '', watchdog = null;
+
+  // Chrome rất lâu mới chốt câu khi người nói liên tục → tự cắt thành câu ngắn (~10–16 từ),
+  // ưu tiên cắt trước các từ nối (and, but, so…) để mỗi khung là một ý trọn vẹn.
+  // committedWords = các từ của câu hiện tại đã đưa lên màn hình.
+  // Chrome hay viết lại cả câu đang nghe (thêm/bớt/gộp từ, hoặc bắt đầu lại từ đầu),
+  // nên phải dò theo NỘI DUNG để biết phần nào đã hiện, không được chỉ đếm số từ.
+  let committedWords = [];
+  const isCJK = () => /^(ja|cmn|yue|zh)/.test(els.srcLang.value);
+  const units = (s) => isCJK() ? Array.from(s.replace(/\s+/g, '')) : s.trim().split(/\s+/).filter(Boolean);
+  const joinUnits = (a) => a.join(isCJK() ? '' : ' ');
+  const normW = (x) => x.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  function alignedOffset(w) {
+    const n = committedWords.length;
+    if (!n) return 0;
+    // 1) Câu mới vẫn bắt đầu giống phần đã hiện → phần còn lại là từ vị trí n
+    if (w.length >= n) {
+      let same = 0;
+      for (let i = 0; i < n; i++) if (normW(w[i]) === normW(committedWords[i])) same++;
+      if (same / n >= 0.6) return n;
+    }
+    // 2) Dò vị trí của mấy từ cuối đã hiện trong câu mới
+    //    (thử thêm cách bỏ từ cuối cùng, vì từ cuối hay bị nghe dở dang, vd "other" ↔ "otherwise")
+    for (let drop = 0; drop <= 1; drop++) {
+      const k = Math.min(3, n - drop);
+      if (k < 2) break;
+      const tail = committedWords.slice(n - drop - k, n - drop).map(normW).join(' ');
+      for (let i = Math.min(w.length - k, n + 6); i >= 0; i--) {
+        if (w.slice(i, i + k).map(normW).join(' ') === tail) return i + k + (drop && normW(w[i + k] || '').startsWith(normW(committedWords[n - 1])) ? 0 : drop);
+      }
+    }
+    // 3) Không khớp: Chrome đã bắt đầu câu mới → hiện toàn bộ (thà lặp vài chữ còn hơn mất chữ)
+    return 0;
+  }
+  const BREAK_WORDS = new Set(['and', 'but', 'so', 'because', 'which', 'that', 'then', 'or', 'when', 'if', 'while',
+    'although', 'however', 'also', 'well', 'okay', 'ok', 'now', 'actually', 'basically', 'anyway', 'after', 'before',
+    'since', 'unless', 'where', 'meanwhile', 'with', 'citing', 'including', 'who', 'we', 'i', 'they', 'in', 'for']);
+  // Trên SOFT từ: chỉ cắt nếu gặp từ nối; vượt HARD từ: buộc phải cắt.
+  function findCut(w, start) {
+    if (isCJK()) return w.length - start > 30 ? w.length - 8 : -1;
+    const SOFT = 12, HARD = 24, MIN = 6, KEEP = 3;
+    const len = w.length - start;
+    if (len <= SOFT) return -1;
+    const limit = w.length - KEEP;
+    for (let i = limit; i >= start + MIN; i--) {
+      if (BREAK_WORDS.has(normW(w[i]))) return i;
+    }
+    return len > HARD ? limit : -1;
+  }
+
+  // Google tự làm rơi chữ khi một câu kéo dài quá lâu không có chỗ nghỉ (đọc bản tin, thuyết trình).
+  // Cách chữa: câu dài quá HANDOVER_MS thì mở phiên nghe mới chạy song song ~1,5 giây rồi mới tắt phiên cũ
+  // → không hụt chữ ở chỗ chuyển; chữ trùng ở đoạn chồng nhau được alignedOffset() loại bỏ.
+  const HANDOVER_MS = 10000, OVERLAP_MS = 1500;
+  let utterStart = 0, handingOver = false, lastW = [];
+
+  function makeRecognizer() {
+    const r = new SR();
+    r.lang = els.srcLang.value;
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => { if (r === rec) setStatus('Đang nghe…', 'on'); };
+    r.onresult = (e) => {
+      if (r !== rec) return; // phiên đang chờ thay thế / đã nghỉ: bỏ qua
+      lastResultAt = Date.now(); restartCount = 0;
+      if (warned) { warned = ''; setStatus('Đang nghe…', 'on'); }
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) {
+          const w = units(res[0].transcript);
+          const rest = joinUnits(w.slice(alignedOffset(w)));
+          committedWords = []; utterStart = 0; lastW = [];
+          commit(rest);
+        } else interim += ' ' + res[0].transcript;
+      }
+      if (!interim.trim()) return;
+      const w = units(interim);
+      lastW = w;
+      if (!utterStart) utterStart = Date.now();
+      let start = alignedOffset(w);
+      committedWords = w.slice(0, start);
+      const cut = findCut(w, start);
+      if (cut > start) {
+        const piece = joinUnits(w.slice(start, cut));
+        committedWords = w.slice(0, cut);
+        start = cut;
+        commit(piece);
+      }
+      onInterim(joinUnits(w.slice(start)));
+      if (Date.now() - utterStart > HANDOVER_MS) handover();
+    };
+    r.onerror = (e) => {
+      if (r !== rec) return;
+      switch (e.error) {
+        case 'no-speech': case 'aborted': return;
+        case 'not-allowed': case 'service-not-allowed':
+          toast('Trình duyệt chưa được cấp quyền micro. Bấm biểu tượng 🔒 trên thanh địa chỉ → cho phép Micro.');
+          stop(); return;
+        case 'audio-capture':
+          // Micro bị ngắt giữa chừng (hay gặp với tai nghe Bluetooth) → onend sẽ tự lấy lại micro
+          if (source === 'mic') { setStatus('Micro bị ngắt, đang kết nối lại…', 'err'); return; }
+          toast('Không tìm thấy nguồn âm thanh.'); stop(); return;
+        case 'network':
+          setStatus('Mất kết nối, đang thử lại…', 'err'); return;
+        case 'language-not-supported':
+          toast('Ngôn ngữ này chưa được hỗ trợ nhận dạng.'); stop(); return;
+        default:
+          setStatus('Lỗi: ' + e.error, 'err');
+      }
+    };
+    r.onend = () => {
+      // Chrome tự ngắt sau một lúc im lặng → tự khởi động lại
+      if (r !== rec || !running) return;
+      if (pendingItem) commit(pendingText);
+      committedWords = []; utterStart = 0; lastW = [];
+      restartCount++;
+      const delay = restartCount > 5 ? 2000 : 150;
+      setTimeout(() => { if (running && rec === r) startRecognizer(); }, delay);
+    };
+    return r;
+  }
+
+  function useTrackNow() {
+    // Micro đã chọn: đưa đúng micro đó cho bộ nhận dạng (nếu còn sống), nếu không thì để Chrome tự dùng micro mặc định
+    return source === 'system' || (!!audioTrack && audioTrack.readyState === 'live' && !!els.micSel.value);
+  }
+
+  function handover() {
+    if (handingOver || !running) return;
+    const old = rec, nxt = makeRecognizer();
+    try { if (useTrackNow()) nxt.start(audioTrack); else nxt.start(); }
+    catch { utterStart = Date.now(); return; }
+    handingOver = true;
+    setTimeout(() => {
+      handingOver = false;
+      if (!running || rec !== old) { try { nxt.abort(); } catch {} return; }
+      const tail = lastW;
+      rec = nxt; // từ đây chỉ nghe phiên mới
+      try { old.abort(); } catch {}
+      if (pendingItem) commit(pendingText);
+      committedWords = tail; // để phiên mới bỏ qua phần chữ trùng ở đoạn chồng nhau
+      utterStart = 0; lastW = [];
+    }, OVERLAP_MS);
+  }
+
+  const MIC_DEAD_MSG = 'Micro này không giữ được kết nối (thường gặp với micro tai nghe Bluetooth). '
+    + 'Bấm ⚙️ → chọn micro “Microphone Array (Realtek…)” của laptop rồi bấm Bắt đầu lại.';
+
+  // Lấy lại micro khi track bị ngắt (tai nghe Bluetooth đổi chế độ, rút thiết bị…)
+  async function recoverTrack() {
+    if (source !== 'mic') { toast('Nguồn âm thanh đã bị ngắt.'); stop(); return false; }
+    try {
+      const fresh = await getMicAudio();
+      if (!running) { fresh.getTracks().forEach(t => t.stop()); return false; }
+      if (captureStream) captureStream.getTracks().forEach(t => t.stop());
+      captureStream = fresh;
+      audioTrack = fresh.getAudioTracks()[0];
+      stopMeter(); startMeter(audioTrack);
+      return true;
+    } catch {
+      toast(MIC_DEAD_MSG, 15000); stop(); return false;
+    }
+  }
+
+  let startFails = 0;
+  async function startRecognizer() {
+    if (source === 'system' && (!audioTrack || audioTrack.readyState !== 'live')) {
+      if (!(await recoverTrack())) return;
+    }
+    if (!running) return;
+    const useTrack = useTrackNow();
+    rec = makeRecognizer();
+    try {
+      if (useTrack) rec.start(audioTrack); else rec.start();
+      startFails = 0;
+    } catch (err) {
+      if (useTrack && source === 'mic') { audioTrack = null; setTimeout(() => { if (running) startRecognizer(); }, 100); return; }
+      // Micro Bluetooth đang chuyển chế độ: thử lại vài lần trước khi bỏ cuộc
+      if (++startFails <= 4) { setStatus('Đang kết nối lại micro…', 'err'); setTimeout(() => { if (running) startRecognizer(); }, 1000); return; }
+      startFails = 0;
+      toast(MIC_DEAD_MSG, 15000);
+      stop();
+    }
+  }
+
+  async function getSystemAudio() {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      systemAudio: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'include',
+    });
+    if (!stream.getAudioTracks().length) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error('NO_AUDIO');
+    }
+    stream.getVideoTracks().forEach(t => { t.enabled = false; });
+    return stream;
+  }
+
+  async function getMicAudio() {
+    // Lần đầu chưa có quyền thì chưa đọc được tên micro → xin quyền trước để tự chọn micro laptop
+    if (!els.micSel.value && ![...els.micSel.options].some(o => o.value)) {
+      try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(t => t.stop()); await loadMics(); } catch {}
+    }
+    const id = els.micSel.value;
+    // Tai nghe Bluetooth phải chuyển sang chế độ đàm thoại khi bật micro, track lúc đầu
+    // có thể bị ngắt ngay → chờ ổn định rồi kiểm tra, hỏng thì thử lại.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: id ? { exact: id } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      await new Promise(r => setTimeout(r, 400 + attempt * 800));
+      const t = stream.getAudioTracks()[0];
+      if (t && t.readyState === 'live') {
+        loadMics();
+        return stream;
+      }
+      stream.getTracks().forEach(x => x.stop());
+    }
+    throw new Error('MIC_DEAD');
+  }
+
+  // ---------- Đo mức âm thanh + cảnh báo khi không nghe thấy gì ----------
+  let meterCtx = null, meterTimer = null;
+  function startMeter(track) {
+    meterCtx = new AudioContext();
+    const an = meterCtx.createAnalyser();
+    an.fftSize = 1024;
+    meterCtx.createMediaStreamSource(new MediaStream([track])).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    meterTimer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let s = 0; for (const v of buf) s += v * v;
+      const rms = Math.sqrt(s / buf.length);
+      els.meterBar.style.width = Math.min(100, rms * 500) + '%';
+      if (rms > 0.008) lastSoundAt = Date.now();
+    }, 100);
+  }
+  function stopMeter() {
+    clearInterval(meterTimer); meterTimer = null;
+    try { meterCtx && meterCtx.close(); } catch {}
+    meterCtx = null; els.meterBar.style.width = '0';
+  }
+  function checkHealth() {
+    if (!running) return;
+    // Micro chết giữa chừng → ngắt phiên nhận dạng để onend tự lấy lại micro
+    if (rec && audioTrack && audioTrack.readyState !== 'live') { try { rec.abort(); } catch {} return; }
+    const now = Date.now();
+    if (now - lastSoundAt > 10000) {
+      if (warned === 'silent') return;
+      warned = 'silent';
+      setStatus('Không nghe thấy âm thanh!', 'err');
+      toast(source === 'mic'
+        ? 'Micro không thu được tiếng. Nếu đang đeo tai nghe Bluetooth thì micro laptop không nghe được âm thanh trong tai nghe → dùng 🖥️ Họp online, hoặc bấm ⚙️ chọn đúng micro.'
+        : 'Không có âm thanh từ tab/màn hình đã chọn. Kiểm tra: video/cuộc họp có đang phát tiếng không, đã bật “Chia sẻ âm thanh” chưa, có chọn đúng tab không.', 12000);
+    } else if (now - lastSoundAt < 3000 && now - lastResultAt > 15000) {
+      if (warned === 'noresult') return;
+      warned = 'noresult';
+      setStatus('Có tiếng nhưng chưa nhận ra lời', 'err');
+      toast('Có âm thanh nhưng không nhận ra lời nói. Bấm ⚙️ kiểm tra “Đối tác nói” đã đúng ngôn ngữ chưa, và Internet có ổn không.', 10000);
+    }
+  }
+
+  async function start() {
+    if (!SR) { toast('Trình duyệt không hỗ trợ nhận dạng giọng nói. Hãy mở bằng Google Chrome.'); return; }
+    if (running) return;
+    if (source === 'mic') setStatus('Đang mở micro…', '');
+    try {
+      captureStream = source === 'system' ? await getSystemAudio() : await getMicAudio();
+    } catch (e) {
+      setStatus('Sẵn sàng', '');
+      if (e.message === 'NO_AUDIO') toast('Chưa có âm thanh: khi chọn tab/màn hình nhớ BẬT “Chia sẻ âm thanh”.', 9000);
+      else if (e.message === 'MIC_DEAD') toast(MIC_DEAD_MSG, 15000);
+      else if (e.name === 'NotAllowedError' && source === 'mic') toast('Chưa được cấp quyền micro. Bấm biểu tượng 🔒 trên thanh địa chỉ → cho phép Micro.');
+      else if (e.name === 'OverconstrainedError') { toast('Micro đã chọn không còn kết nối, chuyển về micro mặc định.'); els.micSel.value = ''; }
+      else if (e.name !== 'NotAllowedError') toast('Không lấy được âm thanh: ' + e.message);
+      return;
+    }
+    audioTrack = captureStream.getAudioTracks()[0];
+    if (source === 'system') {
+      audioTrack.addEventListener('ended', () => { if (running) { toast('Đã ngừng chia sẻ âm thanh.'); stop(); } });
+    }
+
+    running = true; restartCount = 0; committedWords = []; utterStart = 0; lastW = []; handingOver = false; warned = '';
+    lastSoundAt = lastResultAt = Date.now();
+    els.btnStart.textContent = '■ DỪNG'; els.btnStart.classList.add('running');
+    els.srcSeg.querySelectorAll('button').forEach(b => b.disabled = true);
+    els.srcLang.disabled = true; els.micSel.disabled = true;
+    startMeter(audioTrack);
+    watchdog = setInterval(checkHealth, 1000);
+    startRecognizer();
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+
+  function stop() {
+    running = false;
+    try { rec && rec.stop(); } catch {}
+    rec = null;
+    if (pendingItem) commit(pendingText);
+    clearInterval(watchdog); watchdog = null;
+    stopMeter();
+    if (captureStream) { captureStream.getTracks().forEach(t => t.stop()); captureStream = null; }
+    audioTrack = null;
+    els.btnStart.textContent = '▶ BẮT ĐẦU NGHE'; els.btnStart.classList.remove('running');
+    els.srcSeg.querySelectorAll('button').forEach(b => b.disabled = false);
+    els.srcLang.disabled = false; els.micSel.disabled = false;
+    setStatus('Đã dừng', '');
+    try { wakeLock && wakeLock.release(); } catch {}
+    wakeLock = null;
+  }
+
+  // ---------- Cửa sổ nổi (Document Picture-in-Picture) ----------
+  async function openPip() {
+    if (pipWin) { pipWin.close(); return; }
+    if (!('documentPictureInPicture' in window)) { toast('Trình duyệt chưa hỗ trợ cửa sổ nổi. Hãy dùng Google Chrome bản mới.'); return; }
+    pipWin = await documentPictureInPicture.requestWindow({ width: 820, height: 260 });
+    for (const ss of document.styleSheets) {
+      try {
+        const st = pipWin.document.createElement('style');
+        st.textContent = [...ss.cssRules].map(r => r.cssText).join('\n');
+        pipWin.document.head.appendChild(st);
+      } catch {}
+    }
+    pipWin.document.title = 'Phụ đề';
+    pipWin.document.body.className = 'pip';
+    pipFeed = pipWin.document.createElement('div');
+    pipWin.document.body.appendChild(pipFeed);
+    els.btnPip.textContent = '📌 Đóng cửa sổ nổi';
+    applyFont(); applyView(); renderPip();
+    pipWin.addEventListener('pagehide', () => {
+      pipWin = null; pipFeed = null;
+      els.btnPip.textContent = '📌 Cửa sổ nổi';
+    });
+  }
+
+  // ---------- Lưu biên bản ----------
+  function saveTranscript() {
+    const done = items.filter(it => !it.pending);
+    if (!done.length) { toast('Chưa có nội dung để lưu.', 3000); return; }
+    const d = new Date(done[0].t);
+    const pad = n => String(n).padStart(2, '0');
+    const name = `bien-ban-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+    const lines = [
+      'BIÊN BẢN SONG NGỮ – ' + d.toLocaleString('vi-VN'),
+      'Ngôn ngữ: ' + els.srcLang.selectedOptions[0].text + ' → ' + els.tgtLang.selectedOptions[0].text,
+      '',
+      ...done.flatMap(it => [`[${fmtTime(it.t)}]`, cap(it.tr || ''), '   (' + cap(it.o) + ')', '']),
+    ];
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // ---------- Sự kiện ----------
+  els.srcSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || running) return;
+    source = b.dataset.src; store.set('source', source); applySource();
+  });
+  els.srcLang.addEventListener('change', () => { store.set('srcLang', els.srcLang.value); });
+  els.micSel.addEventListener('change', () => { store.set('mic', els.micSel.value); });
+  els.tgtLang.addEventListener('change', () => { store.set('tgtLang', els.tgtLang.value); });
+  els.showEn.addEventListener('change', () => { store.set('showEn', els.showEn.checked); applyView(); });
+  els.lightTheme.addEventListener('change', () => { store.set('light', els.lightTheme.checked); applyView(); });
+  els.btnSettings.addEventListener('click', () => els.settings.classList.toggle('open'));
+  els.btnStart.addEventListener('click', () => running ? stop() : start());
+  els.fsUp.addEventListener('click', () => { fontSize = Math.min(72, fontSize + 4); store.set('fs2', fontSize); applyFont(); });
+  els.fsDown.addEventListener('click', () => { fontSize = Math.max(18, fontSize - 4); store.set('fs2', fontSize); applyFont(); });
+  els.btnPip.addEventListener('click', () => openPip().catch(e => toast('Không mở được cửa sổ nổi: ' + e.message)));
+  els.btnSave.addEventListener('click', saveTranscript);
+  els.toBottom.addEventListener('click', scrollToEnd);
+  els.feed.addEventListener('scroll', () => { if (nearBottom()) els.toBottom.style.display = 'none'; });
+  els.btnClear.addEventListener('click', () => {
+    if (!items.length) return;
+    if (!confirm('Xóa toàn bộ lịch sử? (Nên bấm 💾 Lưu trước)')) return;
+    items = []; pendingItem = null; pendingText = ''; saveHistory(); renderAll();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !['SELECT', 'INPUT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement.tagName)) {
+      e.preventDefault(); running ? stop() : start();
+    }
+  });
+
+  if (!SR) setStatus('Hãy mở bằng Google Chrome', 'err');
+  renderAll();
+})();
+</script>
+</body>
+</html>
