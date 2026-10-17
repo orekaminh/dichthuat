@@ -1078,6 +1078,7 @@
   }
   function closeDiag() {
     diagModal.classList.remove('open');
+    isDiagRunning = false;
     if (diagRec) { try { diagRec.abort(); } catch {} diagRec = null; }
     if (diagStream) { diagStream.getTracks().forEach(t => t.stop()); diagStream = null; }
   }
@@ -1170,7 +1171,64 @@
   });
 
   // Test 2: Speech Recognition Test
-  let diagRec = null;
+  let diagRec = null, isDiagRunning = false;
+
+  function createAndStartDiagSession(lang, logBox, btn, addLog) {
+    if (!isDiagRunning) return;
+    try {
+      diagRec = new SR();
+      diagRec.lang = lang;
+      diagRec.interimResults = true;
+      diagRec.maxAlternatives = 1;
+      diagRec.continuous = !isIOS;
+
+      diagRec.onstart = () => addLog('🟢 onstart: Đang lắng nghe... Hãy nói to vào micro!');
+      diagRec.onaudiostart = () => addLog('🔊 onaudiostart: Đã thu được âm thanh từ micro.');
+      diagRec.onsoundstart = () => addLog('🎵 onsoundstart: Có sóng âm.');
+      diagRec.onspeechstart = () => addLog('🗣️ onspeechstart: ĐÃ PHÁT HIỆN GIỌNG NÓI CỦA BẠN!');
+      diagRec.onspeechend = () => addLog('🤫 onspeechend: Đã ngừng nói, đang xử lý chữ...');
+      diagRec.onresult = (e) => {
+        let t = '';
+        for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+        const isFinal = e.results[0].isFinal;
+        addLog(`✨ ĐÃ NGHE ĐƯỢC: "${t}" (${isFinal ? 'Chốt câu' : 'Đang nói...'})`);
+      };
+      diagRec.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') {
+          // Khoảng lặng 2s bình thường trên điện thoại
+          return;
+        }
+        addLog(`❌ onerror: ${e.error}`);
+        if (e.error === 'not-allowed') addLog('👉 Bạn chưa cấp quyền micro cho Chrome.');
+        else if (e.error === 'network') addLog('👉 Lỗi mạng: Không kết nối được máy chủ Google.');
+      };
+      diagRec.onend = () => {
+        if (!isDiagRunning) {
+          addLog('🏁 onend: Đã kết thúc phiên nghe.');
+          btn.textContent = '▶ Test nghe';
+          btn.style.background = 'var(--live)';
+          btn.style.color = '#000';
+          diagRec = null;
+          return;
+        }
+        // Tự động duy trì nghe tiếp cho người dùng thoải mái nói (không bị tắt sau 2s)
+        addLog('🔄 [Tự động duy trì] Tiếp tục nghe câu tiếp theo...');
+        setTimeout(() => {
+          if (isDiagRunning) createAndStartDiagSession(lang, logBox, btn, addLog);
+        }, 350);
+      };
+
+      diagRec.start();
+    } catch (err) {
+      addLog(`❌ Lỗi start: ${err.message}`);
+      btn.textContent = '▶ Test nghe';
+      btn.style.background = 'var(--live)';
+      btn.style.color = '#000';
+      isDiagRunning = false;
+      diagRec = null;
+    }
+  }
+
   $('btnDiagSR').addEventListener('click', async () => {
     const btn = $('btnDiagSR');
     const logBox = $('diagLog');
@@ -1182,9 +1240,9 @@
       logBox.scrollTop = logBox.scrollHeight;
     };
 
-    if (diagRec) {
-      try { diagRec.abort(); } catch {}
-      diagRec = null;
+    if (isDiagRunning) {
+      isDiagRunning = false;
+      if (diagRec) { try { diagRec.abort(); } catch {} diagRec = null; }
       btn.textContent = '▶ Test nghe';
       btn.style.background = 'var(--live)';
       btn.style.color = '#000';
@@ -1215,66 +1273,17 @@
       return;
     }
 
-    addLog('2️⃣ Đang chuẩn bị kết nối dịch vụ giọng nói...');
+    addLog('2️⃣ Đang kết nối dịch vụ giọng nói Google...');
     await new Promise(r => setTimeout(r, 350));
     btn.disabled = false;
 
-    addLog(`🚀 Bắt đầu nhận dạng giọng nói (${lang})...`);
-    diagRec = new SR();
-    diagRec.lang = lang;
-    diagRec.interimResults = true;
-    diagRec.maxAlternatives = 1;
-    diagRec.continuous = false;
-
+    isDiagRunning = true;
     btn.textContent = '■ Dừng';
     btn.style.background = 'var(--danger)';
     btn.style.color = '#fff';
 
-    diagRec.onstart = () => addLog('🟢 onstart: Đã kết nối dịch vụ Google! Hãy nói vào micro...');
-    diagRec.onaudiostart = () => addLog('🔊 onaudiostart: Đang thu âm thanh...');
-    diagRec.onsoundstart = () => addLog('🎵 onsoundstart: Đã có tín hiệu âm thanh vào micro...');
-    diagRec.onspeechstart = () => addLog('🗣️ onspeechstart: ĐÃ NHẬN RA GIỌNG NÓI!');
-    diagRec.onspeechend = () => addLog('🤫 onspeechend: Đã dừng nói.');
-    diagRec.onsoundend = () => addLog('🔇 onsoundend: Âm thanh kết thúc.');
-    diagRec.onaudioend = () => addLog('🛑 onaudioend: Đã ngắt thu âm.');
-    diagRec.onresult = (e) => {
-      let t = '';
-      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-      const isFinal = e.results[0].isFinal;
-      addLog(`📝 onresult (${isFinal ? 'CHỐT' : 'tạm'}): "${t}"`);
-    };
-    diagRec.onerror = (e) => {
-      addLog(`❌ onerror: ${e.error}`);
-      if (e.error === 'aborted') {
-        addLog('⚠️ Lỗi "aborted" do Android ngắt phiên nhận diện.');
-        addLog('👉 NGUYÊN NHÂN & CÁCH SỬA:');
-        addLog('   1. Trên máy Android: Vào Cài đặt máy → Ứng dụng → Google (hoặc Speech Services by Google) → Quyền → Bật "Micro".');
-        addLog('   2. Bấm "Test nghe" lại lần nữa sau 2 giây.');
-      } else if (e.error === 'not-allowed') {
-        addLog('👉 Bạn chưa cấp quyền micro cho Chrome.');
-      } else if (e.error === 'no-speech') {
-        addLog('👉 Không nhận thấy tiếng nói (hãy nói to và gần micro hơn).');
-      } else if (e.error === 'network') {
-        addLog('👉 Lỗi mạng: Không kết nối được tới máy chủ giọng nói của Google.');
-      }
-    };
-    diagRec.onend = () => {
-      addLog('🏁 onend: Kết thúc phiên nghe.');
-      btn.textContent = '▶ Test nghe';
-      btn.style.background = 'var(--live)';
-      btn.style.color = '#000';
-      diagRec = null;
-    };
-
-    try {
-      diagRec.start();
-    } catch (err) {
-      addLog(`❌ Lỗi khi khởi động start(): ${err.message}`);
-      btn.textContent = '▶ Test nghe';
-      btn.style.background = 'var(--live)';
-      btn.style.color = '#000';
-      diagRec = null;
-    }
+    addLog(`🚀 Bắt đầu nghe liên tục (Ngôn ngữ: ${lang}). Hãy nói to vào micro!`);
+    createAndStartDiagSession(lang, logBox, btn, addLog);
   });
 
   if (!SR) setStatus('Hãy mở bằng Google Chrome', 'err');
