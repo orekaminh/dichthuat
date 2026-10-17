@@ -361,7 +361,7 @@
         <span class="bar"></span>
         <span class="bar"></span>
         <span class="bar"></span>
-      </div>
+      <span id="meter" style="display:none;"><i id="meterBar"></i></span>
       <span id="dot"></span><span id="statusText">Sẵn sàng</span>
     </div>
   </div>
@@ -679,7 +679,7 @@
     } catch {}
   }
   loadMics();
-  navigator.mediaDevices && navigator.mediaDevices.addEventListener('devicechange', loadMics);
+  navigator.mediaDevices && navigator.mediaDevices.addEventListener && navigator.mediaDevices.addEventListener('devicechange', loadMics);
   applyFont(); applySource(); applyView();
 
   // ---------- Trạng thái ----------
@@ -749,16 +749,19 @@
 
   function fillCard(div, it) {
     div.className = 'card' + (it.pending ? ' pending' : '');
-    div.innerHTML = '<div class="vi"></div><div class="en"></div>';
-    const vi = div.firstChild, en = div.lastChild;
-    if (it.tr) {
-      vi.textContent = cap(it.tr);
-      vi.classList.remove('waiting');
-    } else {
-      vi.textContent = it.o ? 'Đang dịch…' : 'Đang nghe…';
-      vi.classList.add('waiting');
+    let vi = div.querySelector ? div.querySelector('.vi') : null;
+    let en = div.querySelector ? div.querySelector('.en') : null;
+    if (!vi || !en) {
+      div.innerHTML = '<div class="vi"></div><div class="en"></div>';
+      vi = div.querySelector ? div.querySelector('.vi') : div.firstChild;
+      en = div.querySelector ? div.querySelector('.en') : div.lastChild;
     }
-    en.textContent = it.o ? cap(it.o) : '';
+    if (it.tr) {
+      if (vi) { vi.textContent = cap(it.tr); vi.classList && vi.classList.remove('waiting'); }
+    } else {
+      if (vi) { vi.textContent = it.o ? 'Đang dịch…' : 'Đang nghe…'; vi.classList && vi.classList.add('waiting'); }
+    }
+    if (en) en.textContent = it.o ? cap(it.o) : '';
   }
   function markNewest(container) {
     const cards = container.querySelectorAll('.card');
@@ -930,38 +933,38 @@
     r.onaudiostart = () => {
       lastSoundAt = Date.now();
       setWaveSpeaking(true);
-      if (!audioTrack) els.meterBar.style.width = '30%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '30%';
     };
     r.onsoundstart = () => {
       lastSoundAt = Date.now();
       setWaveSpeaking(true);
-      if (!audioTrack) els.meterBar.style.width = '60%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '60%';
     };
     r.onspeechstart = () => {
       lastSoundAt = Date.now();
       setWaveSpeaking(true);
-      if (!audioTrack) els.meterBar.style.width = '90%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '90%';
       if (r === rec) setStatus(`Đang nghe (${getCurSrcName()})…`, 'on');
     };
     r.onspeechend = () => {
       setWaveSpeaking(false);
-      if (!audioTrack) els.meterBar.style.width = '20%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '20%';
     };
     r.onsoundend = () => {
       setWaveSpeaking(false);
-      if (!audioTrack) els.meterBar.style.width = '0%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '0%';
     };
     r.onaudioend = () => {
       setWaveSpeaking(false);
-      if (!audioTrack) els.meterBar.style.width = '0%';
+      if (!audioTrack && els.meterBar) els.meterBar.style.width = '0%';
     };
     r.onresult = (e) => {
       if (r !== rec) return; // phiên đang chờ thay thế / đã nghỉ: bỏ qua
       lastSoundAt = lastResultAt = Date.now();
       setWaveSpeaking(true);
-      if (!audioTrack) {
+      if (!audioTrack && els.meterBar) {
         els.meterBar.style.width = '100%';
-        setTimeout(() => { if (running && !audioTrack) els.meterBar.style.width = '20%'; }, 250);
+        setTimeout(() => { if (running && !audioTrack && els.meterBar) els.meterBar.style.width = '20%'; }, 250);
       }
       restartCount = 0;
       if (warned) { warned = ''; setStatus(`Đang nghe (${getCurSrcName()})…`, 'on'); }
@@ -1147,7 +1150,8 @@
   function stopMeter() {
     clearInterval(meterTimer); meterTimer = null;
     try { meterCtx && meterCtx.close(); } catch {}
-    meterCtx = null; els.meterBar.style.width = '0';
+    meterCtx = null;
+    if (els.meterBar) els.meterBar.style.width = '0';
   }
   function checkHealth() {
     if (!running) return;
@@ -1203,14 +1207,6 @@
       }
       startMeter(audioTrack);
     } else {
-      try {
-        const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        testStream.getTracks().forEach(t => t.stop());
-      } catch (err) {
-        toast('Chưa được cấp quyền micro. Hãy bấm biểu tượng 🔒 trên thanh địa chỉ → Cho phép Micro.');
-        return;
-      }
-      await new Promise(r => setTimeout(r, 350));
       captureStream = null;
       audioTrack = null;
     }
@@ -1229,19 +1225,26 @@
   function stop() {
     running = false;
     setWaveListening(false);
-    try { rec && rec.stop(); } catch {}
+    try { if (rec) rec.stop(); } catch {}
     rec = null;
-    if (pendingItem) commit(pendingText);
-    clearInterval(watchdog); watchdog = null;
-    stopMeter();
-    els.meterBar.style.width = '0';
-    if (captureStream) { captureStream.getTracks().forEach(t => t.stop()); captureStream = null; }
+    if (pendingItem) {
+      try { commit(pendingText); } catch {}
+    }
+    if (watchdog) { clearInterval(watchdog); watchdog = null; }
+    try { stopMeter(); } catch {}
+    if (els.meterBar) { try { els.meterBar.style.width = '0'; } catch {} }
+    if (captureStream) {
+      try { captureStream.getTracks().forEach(t => t.stop()); } catch {}
+      captureStream = null;
+    }
     audioTrack = null;
-    els.btnStart.textContent = '▶ BẮT ĐẦU NGHE'; els.btnStart.classList.remove('running');
+    els.btnStart.textContent = '▶ BẮT ĐẦU NGHE';
+    els.btnStart.classList.remove('running');
     els.srcSeg.querySelectorAll('button').forEach(b => b.disabled = false);
-    els.srcLang.disabled = false; els.micSel.disabled = false;
+    els.srcLang.disabled = false;
+    els.micSel.disabled = false;
     setStatus('Đã dừng', '');
-    try { wakeLock && wakeLock.release(); } catch {}
+    try { if (wakeLock) wakeLock.release(); } catch {}
     wakeLock = null;
   }
 
