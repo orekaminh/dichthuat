@@ -763,7 +763,7 @@
       if (pendingItem) commit(pendingText);
       committedWords = []; utterStart = 0; lastW = [];
       restartCount++;
-      const delay = restartCount > 5 ? 2000 : 150;
+      const delay = isMobile ? (restartCount > 5 ? 2000 : 450) : (restartCount > 5 ? 2000 : 150);
       setTimeout(() => { if (running && rec === r) startRecognizer(); }, delay);
     };
     return r;
@@ -948,6 +948,14 @@
       }
       startMeter(audioTrack);
     } else {
+      try {
+        const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        testStream.getTracks().forEach(t => t.stop());
+      } catch (err) {
+        toast('Chưa được cấp quyền micro. Hãy bấm biểu tượng 🔒 trên thanh địa chỉ → Cho phép Micro.');
+        return;
+      }
+      await new Promise(r => setTimeout(r, 350));
       captureStream = null;
       audioTrack = null;
     }
@@ -1192,7 +1200,26 @@
     }
 
     logBox.textContent = '';
-    addLog(`🚀 Khởi tạo nhận dạng giọng nói (${lang})...`);
+    btn.disabled = true;
+
+    // 1. Kiểm tra / Xin quyền micro trước
+    addLog('1️⃣ Đang kiểm tra quyền Micro của trình duyệt...');
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      addLog('✅ Quyền Micro: ĐÃ CẤP HỢP LỆ');
+    } catch (permErr) {
+      addLog(`❌ Quyền Micro: BỊ CHẶN (${permErr.name})`);
+      addLog('👉 Hãy bấm biểu tượng 🔒 (hoặc icon cài đặt) ở thanh địa chỉ web → Quyền → Bật Micro!');
+      btn.disabled = false;
+      return;
+    }
+
+    addLog('2️⃣ Đang chuẩn bị kết nối dịch vụ giọng nói...');
+    await new Promise(r => setTimeout(r, 350));
+    btn.disabled = false;
+
+    addLog(`🚀 Bắt đầu nhận dạng giọng nói (${lang})...`);
     diagRec = new SR();
     diagRec.lang = lang;
     diagRec.interimResults = true;
@@ -1203,8 +1230,8 @@
     btn.style.background = 'var(--danger)';
     btn.style.color = '#fff';
 
-    diagRec.onstart = () => addLog('🟢 onstart: Đã kết nối với dịch vụ giọng nói! Hãy nói vào micro...');
-    diagRec.onaudiostart = () => addLog('🔊 onaudiostart: Đang bắt đầu thu âm thanh...');
+    diagRec.onstart = () => addLog('🟢 onstart: Đã kết nối dịch vụ Google! Hãy nói vào micro...');
+    diagRec.onaudiostart = () => addLog('🔊 onaudiostart: Đang thu âm thanh...');
     diagRec.onsoundstart = () => addLog('🎵 onsoundstart: Đã có tín hiệu âm thanh vào micro...');
     diagRec.onspeechstart = () => addLog('🗣️ onspeechstart: ĐÃ NHẬN RA GIỌNG NÓI!');
     diagRec.onspeechend = () => addLog('🤫 onspeechend: Đã dừng nói.');
@@ -1218,10 +1245,18 @@
     };
     diagRec.onerror = (e) => {
       addLog(`❌ onerror: ${e.error}`);
-      if (e.error === 'not-allowed') addLog('👉 Bạn chưa cấp quyền micro cho Chrome hoặc hệ thống.');
-      else if (e.error === 'no-speech') addLog('👉 Không nhận thấy tiếng nói (hãy nói to và gần micro hơn).');
-      else if (e.error === 'network') addLog('👉 Lỗi mạng: Không kết nối được tới máy chủ giọng nói của Google.');
-      else if (e.error === 'service-not-allowed') addLog('👉 Dịch vụ giọng nói bị khóa hoặc bị app khác chiếm quyền.');
+      if (e.error === 'aborted') {
+        addLog('⚠️ Lỗi "aborted" do Android ngắt phiên nhận diện.');
+        addLog('👉 NGUYÊN NHÂN & CÁCH SỬA:');
+        addLog('   1. Trên máy Android: Vào Cài đặt máy → Ứng dụng → Google (hoặc Speech Services by Google) → Quyền → Bật "Micro".');
+        addLog('   2. Bấm "Test nghe" lại lần nữa sau 2 giây.');
+      } else if (e.error === 'not-allowed') {
+        addLog('👉 Bạn chưa cấp quyền micro cho Chrome.');
+      } else if (e.error === 'no-speech') {
+        addLog('👉 Không nhận thấy tiếng nói (hãy nói to và gần micro hơn).');
+      } else if (e.error === 'network') {
+        addLog('👉 Lỗi mạng: Không kết nối được tới máy chủ giọng nói của Google.');
+      }
     };
     diagRec.onend = () => {
       addLog('🏁 onend: Kết thúc phiên nghe.');
