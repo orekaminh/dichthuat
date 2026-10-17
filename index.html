@@ -269,6 +269,7 @@
     <select id="srcLang">
       <option value="en-US" data-tr="en">Tiếng Anh (Mỹ)</option>
       <option value="en-GB" data-tr="en">Tiếng Anh (Anh)</option>
+      <option value="vi-VN" data-tr="vi">Tiếng Việt</option>
       <option value="en-IN" data-tr="en">Tiếng Anh (Ấn Độ)</option>
       <option value="en-SG" data-tr="en">Tiếng Anh (Singapore)</option>
       <option value="ko-KR" data-tr="ko">Tiếng Hàn</option>
@@ -338,10 +339,12 @@
     set(k, v) { try { localStorage.setItem('pd_' + k, JSON.stringify(v)); } catch {} },
   };
 
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 680;
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   let pipWin = null, pipFeed = null;
   let source = store.get('source', 'mic');
-  let fontSize = store.get('fs2', window.innerWidth <= 680 ? 24 : 34);
-  if (!('documentPictureInPicture' in window)) els.btnPip.style.display = 'none';
+  let fontSize = store.get('fs2', isMobile ? 24 : 34);
+  if (!('documentPictureInPicture' in window) || isMobile) els.btnPip.style.display = 'none';
   els.srcLang.value = store.get('srcLang', 'en-US');
   els.tgtLang.value = store.get('tgtLang', 'vi');
   if (!els.srcLang.value) els.srcLang.value = 'en-US';
@@ -595,14 +598,41 @@
   function makeRecognizer() {
     const r = new SR();
     r.lang = els.srcLang.value;
-    r.continuous = true;
+    r.continuous = !isIOS;
     r.interimResults = true;
     r.maxAlternatives = 1;
 
     r.onstart = () => { if (r === rec) setStatus('Đang nghe…', 'on'); };
+    r.onaudiostart = () => {
+      lastSoundAt = Date.now();
+      if (!audioTrack) els.meterBar.style.width = '30%';
+    };
+    r.onsoundstart = () => {
+      lastSoundAt = Date.now();
+      if (!audioTrack) els.meterBar.style.width = '60%';
+    };
+    r.onspeechstart = () => {
+      lastSoundAt = Date.now();
+      if (!audioTrack) els.meterBar.style.width = '90%';
+      if (r === rec) setStatus('Đang nghe…', 'on');
+    };
+    r.onspeechend = () => {
+      if (!audioTrack) els.meterBar.style.width = '20%';
+    };
+    r.onsoundend = () => {
+      if (!audioTrack) els.meterBar.style.width = '0%';
+    };
+    r.onaudioend = () => {
+      if (!audioTrack) els.meterBar.style.width = '0%';
+    };
     r.onresult = (e) => {
       if (r !== rec) return; // phiên đang chờ thay thế / đã nghỉ: bỏ qua
-      lastResultAt = Date.now(); restartCount = 0;
+      lastSoundAt = lastResultAt = Date.now();
+      if (!audioTrack) {
+        els.meterBar.style.width = '100%';
+        setTimeout(() => { if (running && !audioTrack) els.meterBar.style.width = '20%'; }, 250);
+      }
+      restartCount = 0;
       if (warned) { warned = ''; setStatus('Đang nghe…', 'on'); }
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -635,18 +665,17 @@
       switch (e.error) {
         case 'no-speech': case 'aborted': return;
         case 'not-allowed': case 'service-not-allowed':
-          toast('Trình duyệt chưa được cấp quyền micro. Bấm biểu tượng 🔒 trên thanh địa chỉ → cho phép Micro.');
+          toast('Trình duyệt chưa được cấp quyền micro. Hãy bấm biểu tượng 🔒 trên thanh địa chỉ hoặc vào Cài đặt điện thoại cấp quyền Micro cho Chrome.');
           stop(); return;
         case 'audio-capture':
-          // Micro bị ngắt giữa chừng (hay gặp với tai nghe Bluetooth) → onend sẽ tự lấy lại micro
           if (source === 'mic') { setStatus('Micro bị ngắt, đang kết nối lại…', 'err'); return; }
           toast('Không tìm thấy nguồn âm thanh.'); stop(); return;
         case 'network':
-          setStatus('Mất kết nối, đang thử lại…', 'err'); return;
+          setStatus('Mất kết nối mạng nhận dạng, đang thử lại…', 'err'); return;
         case 'language-not-supported':
-          toast('Ngôn ngữ này chưa được hỗ trợ nhận dạng.'); stop(); return;
+          toast('Ngôn ngữ này chưa được hỗ trợ nhận dạng trên thiết bị.'); stop(); return;
         default:
-          setStatus('Lỗi: ' + e.error, 'err');
+          setStatus('Lỗi nhận dạng: ' + e.error, 'err');
       }
     };
     r.onend = () => {
@@ -662,12 +691,16 @@
   }
 
   function useTrackNow() {
-    // Micro đã chọn: đưa đúng micro đó cho bộ nhận dạng (nếu còn sống), nếu không thì để Chrome tự dùng micro mặc định
-    return source === 'system' || (!!audioTrack && audioTrack.readyState === 'live' && !!els.micSel.value);
+    return source === 'system' || (!isMobile && !!audioTrack && audioTrack.readyState === 'live' && !!els.micSel.value);
   }
 
   function handover() {
     if (handingOver || !running) return;
+    if (isMobile) {
+      utterStart = Date.now();
+      try { rec && rec.stop(); } catch {}
+      return;
+    }
     const old = rec, nxt = makeRecognizer();
     try { if (useTrackNow()) nxt.start(audioTrack); else nxt.start(); }
     catch { utterStart = Date.now(); return; }
@@ -787,14 +820,14 @@
     // Micro chết giữa chừng → ngắt phiên nhận dạng để onend tự lấy lại micro
     if (rec && audioTrack && audioTrack.readyState !== 'live') { try { rec.abort(); } catch {} return; }
     const now = Date.now();
-    if (now - lastSoundAt > 10000) {
+    if (audioTrack && now - lastSoundAt > 10000) {
       if (warned === 'silent') return;
       warned = 'silent';
       setStatus('Không nghe thấy âm thanh!', 'err');
       toast(source === 'mic'
         ? 'Micro không thu được tiếng. Nếu đang đeo tai nghe Bluetooth thì micro laptop không nghe được âm thanh trong tai nghe → dùng 🖥️ Họp online, hoặc bấm ⚙️ chọn đúng micro.'
         : 'Không có âm thanh từ tab/màn hình đã chọn. Kiểm tra: video/cuộc họp có đang phát tiếng không, đã bật “Chia sẻ âm thanh” chưa, có chọn đúng tab không.', 12000);
-    } else if (now - lastSoundAt < 3000 && now - lastResultAt > 15000) {
+    } else if (audioTrack && now - lastSoundAt < 3000 && now - lastResultAt > 15000) {
       if (warned === 'noresult') return;
       warned = 'noresult';
       setStatus('Có tiếng nhưng chưa nhận ra lời', 'err');
@@ -805,21 +838,39 @@
   async function start() {
     if (!SR) { toast('Trình duyệt không hỗ trợ nhận dạng giọng nói. Hãy mở bằng Google Chrome.'); return; }
     if (running) return;
-    if (source === 'mic') setStatus('Đang mở micro…', '');
-    try {
-      captureStream = source === 'system' ? await getSystemAudio() : await getMicAudio();
-    } catch (e) {
-      setStatus('Sẵn sàng', '');
-      if (e.message === 'NO_AUDIO') toast('Chưa có âm thanh: khi chọn tab/màn hình nhớ BẬT “Chia sẻ âm thanh”.', 9000);
-      else if (e.message === 'MIC_DEAD') toast(MIC_DEAD_MSG, 15000);
-      else if (e.name === 'NotAllowedError' && source === 'mic') toast('Chưa được cấp quyền micro. Bấm biểu tượng 🔒 trên thanh địa chỉ → cho phép Micro.');
-      else if (e.name === 'OverconstrainedError') { toast('Micro đã chọn không còn kết nối, chuyển về micro mặc định.'); els.micSel.value = ''; }
-      else if (e.name !== 'NotAllowedError') toast('Không lấy được âm thanh: ' + e.message);
-      return;
+
+    if (source === 'system' && isMobile) {
+      toast('Chế độ "Họp online" (thu âm hệ thống) chỉ dùng được trên máy tính. Trên điện thoại hãy dùng "🎤 Trực tiếp".', 5000);
+      source = 'mic';
+      store.set('source', 'mic');
+      applySource();
     }
-    audioTrack = captureStream.getAudioTracks()[0];
-    if (source === 'system') {
-      audioTrack.addEventListener('ended', () => { if (running) { toast('Đã ngừng chia sẻ âm thanh.'); stop(); } });
+
+    // Chỉ dùng getUserMedia khi là Họp online hệ thống HOẶC máy tính chọn micro phụ.
+    // Tuyệt đối không bật getUserMedia trên điện thoại vì sẽ tranh chấp khóa micro với bộ nhận dạng giọng nói!
+    const needMediaStream = (source === 'system') || (!isMobile && source === 'mic' && !!els.micSel.value);
+
+    if (needMediaStream) {
+      if (source === 'mic') setStatus('Đang mở micro…', '');
+      try {
+        captureStream = source === 'system' ? await getSystemAudio() : await getMicAudio();
+      } catch (e) {
+        setStatus('Sẵn sàng', '');
+        if (e.message === 'NO_AUDIO') toast('Chưa có âm thanh: khi chọn tab/màn hình nhớ BẬT “Chia sẻ âm thanh”.', 9000);
+        else if (e.message === 'MIC_DEAD') toast(MIC_DEAD_MSG, 15000);
+        else if (e.name === 'NotAllowedError' && source === 'mic') toast('Chưa được cấp quyền micro. Bấm biểu tượng 🔒 trên thanh địa chỉ → cho phép Micro.');
+        else if (e.name === 'OverconstrainedError') { toast('Micro đã chọn không còn kết nối, chuyển về micro mặc định.'); els.micSel.value = ''; }
+        else if (e.name !== 'NotAllowedError') toast('Không lấy được âm thanh: ' + e.message);
+        return;
+      }
+      audioTrack = captureStream.getAudioTracks()[0];
+      if (source === 'system') {
+        audioTrack.addEventListener('ended', () => { if (running) { toast('Đã ngừng chia sẻ âm thanh.'); stop(); } });
+      }
+      startMeter(audioTrack);
+    } else {
+      captureStream = null;
+      audioTrack = null;
     }
 
     running = true; restartCount = 0; committedWords = []; utterStart = 0; lastW = []; handingOver = false; warned = '';
@@ -827,7 +878,6 @@
     els.btnStart.textContent = '■ DỪNG'; els.btnStart.classList.add('running');
     els.srcSeg.querySelectorAll('button').forEach(b => b.disabled = true);
     els.srcLang.disabled = true; els.micSel.disabled = true;
-    startMeter(audioTrack);
     watchdog = setInterval(checkHealth, 1000);
     startRecognizer();
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
@@ -840,6 +890,7 @@
     if (pendingItem) commit(pendingText);
     clearInterval(watchdog); watchdog = null;
     stopMeter();
+    els.meterBar.style.width = '0';
     if (captureStream) { captureStream.getTracks().forEach(t => t.stop()); captureStream = null; }
     audioTrack = null;
     els.btnStart.textContent = '▶ BẮT ĐẦU NGHE'; els.btnStart.classList.remove('running');
