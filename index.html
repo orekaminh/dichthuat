@@ -361,6 +361,7 @@
         <span class="bar"></span>
         <span class="bar"></span>
         <span class="bar"></span>
+      </div>
       <span id="meter" style="display:none;"><i id="meterBar"></i></span>
       <span id="dot"></span><span id="statusText">Sẵn sàng</span>
     </div>
@@ -521,8 +522,11 @@
     set(k, v) { try { localStorage.setItem('pd_' + k, JSON.stringify(v)); } catch {} },
   };
 
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 680;
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && window.innerWidth <= 1024)
+    || window.innerWidth <= 680;
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let pipWin = null, pipFeed = null;
   let rec = null, running = false, audioTrack = null, captureStream = null, wakeLock = null, restartCount = 0;
   let lastResultAt = 0, lastSoundAt = 0, warned = '', watchdog = null;
@@ -695,8 +699,14 @@
 
   // ---------- Dịch ----------
   const cache = new Map();
-  const srcTr = () => els.srcLang.selectedOptions[0].dataset.tr;
-  const tgt = () => els.tgtLang.value;
+  const srcTr = () => {
+    const opt = (els.srcLang.selectedOptions && els.srcLang.selectedOptions[0]) || (els.srcLang.options && els.srcLang.options[els.srcLang.selectedIndex]);
+    if (opt && opt.dataset && opt.dataset.tr) return opt.dataset.tr;
+    const found = LANGS.find(l => l.code === els.srcLang.value);
+    if (found && found.tr) return found.tr;
+    return els.srcLang.value ? els.srcLang.value.split('-')[0] : 'vi';
+  };
+  const tgt = () => els.tgtLang.value || 'en';
   let builtin = null, builtinKey = '';
 
   async function gtx(text, sl, tl) {
@@ -920,7 +930,7 @@
   function makeRecognizer() {
     const r = new SR();
     r.lang = els.srcLang.value;
-    r.continuous = !isIOS;
+    r.continuous = !isMobile;
     r.interimResults = true;
     r.maxAlternatives = 1;
 
@@ -968,6 +978,32 @@
       }
       restartCount = 0;
       if (warned) { warned = ''; setStatus(`Đang nghe (${getCurSrcName()})…`, 'on'); }
+
+      // Trên điện thoại (Mobile): Xử lý trực tiếp và tin cậy theo từng câu, không dùng thuật toán cắt từ/ghép từ của phòng họp máy tính
+      if (isMobile) {
+        let finalTrans = '';
+        let interimTrans = '';
+        for (let i = 0; i < e.results.length; i++) {
+          const res = e.results[i];
+          if (res.isFinal) {
+            finalTrans += (finalTrans ? ' ' : '') + res[0].transcript.trim();
+          } else {
+            interimTrans += (interimTrans ? ' ' : '') + res[0].transcript.trim();
+          }
+        }
+        finalTrans = finalTrans.trim();
+        interimTrans = interimTrans.trim();
+
+        if (finalTrans) {
+          setStatus(`Đã nghe: "${finalTrans.slice(0, 18)}${finalTrans.length > 18 ? '…' : ''}"`, 'on');
+          commit(finalTrans);
+        } else if (interimTrans) {
+          onInterim(interimTrans);
+        }
+        return;
+      }
+
+      // Trên máy tính (PC): Chạy thuật toán liên tục streaming và tự ngắt câu dài
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
@@ -1013,12 +1049,12 @@
       }
     };
     r.onend = () => {
-      // Chrome tự ngắt sau một lúc im lặng → tự khởi động lại
+      // Chrome tự ngắt sau một lúc im lặng hoặc kết thúc câu → tự khởi động lại
       if (r !== rec || !running) return;
-      if (pendingItem) commit(pendingText);
+      if (pendingItem && pendingText) commit(pendingText);
       committedWords = []; utterStart = 0; lastW = [];
       restartCount++;
-      const delay = isMobile ? (restartCount > 5 ? 2000 : 450) : (restartCount > 5 ? 2000 : 150);
+      const delay = isMobile ? (restartCount > 5 ? 1200 : 250) : (restartCount > 5 ? 2000 : 150);
       setTimeout(() => { if (running && rec === r) startRecognizer(); }, delay);
     };
     return r;
@@ -1029,12 +1065,7 @@
   }
 
   function handover() {
-    if (handingOver || !running) return;
-    if (isMobile) {
-      utterStart = Date.now();
-      try { rec && rec.stop(); } catch {}
-      return;
-    }
+    if (handingOver || !running || isMobile) return;
     const old = rec, nxt = makeRecognizer();
     try { if (useTrackNow()) nxt.start(audioTrack); else nxt.start(); }
     catch { utterStart = Date.now(); return; }
@@ -1082,6 +1113,10 @@
       if (useTrack) rec.start(audioTrack); else rec.start();
       startFails = 0;
     } catch (err) {
+      if (err.name === 'InvalidStateError') {
+        setTimeout(() => { if (running) startRecognizer(); }, 300);
+        return;
+      }
       if (useTrack && source === 'mic') { audioTrack = null; setTimeout(() => { if (running) startRecognizer(); }, 100); return; }
       // Micro Bluetooth đang chuyển chế độ: thử lại vài lần trước khi bỏ cuộc
       if (++startFails <= 4) { setStatus('Đang kết nối lại micro…', 'err'); setTimeout(() => { if (running) startRecognizer(); }, 1000); return; }
@@ -1281,7 +1316,7 @@
     const name = `bien-ban-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
     const lines = [
       'BIÊN BẢN SONG NGỮ – ' + d.toLocaleString('vi-VN'),
-      'Ngôn ngữ: ' + els.srcLang.selectedOptions[0].text + ' → ' + els.tgtLang.selectedOptions[0].text,
+      'Ngôn ngữ: ' + ((els.srcLang.selectedOptions && els.srcLang.selectedOptions[0]) ? els.srcLang.selectedOptions[0].text : getCurSrcName()) + ' → ' + ((els.tgtLang.selectedOptions && els.tgtLang.selectedOptions[0]) ? els.tgtLang.selectedOptions[0].text : getCurTgtName()),
       '',
       ...done.flatMap(it => [`[${fmtTime(it.t)}]`, cap(it.tr || ''), '   (' + cap(it.o) + ')', '']),
     ];
@@ -1458,7 +1493,7 @@
       diagRec.lang = lang;
       diagRec.interimResults = true;
       diagRec.maxAlternatives = 1;
-      diagRec.continuous = !isIOS;
+      diagRec.continuous = !isMobile;
 
       diagRec.onstart = () => {
         addLog('🟢 onstart: Đang lắng nghe... Hãy nói to vào micro!');
@@ -1471,9 +1506,13 @@
       diagRec.onspeechend = () => { addLog('🤫 onspeechend: Đã ngừng nói, đang xử lý chữ...'); setDiagWaveSpeaking(false); };
       diagRec.onresult = (e) => {
         setDiagWaveSpeaking(true);
-        let t = '';
-        for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-        const isFinal = e.results[0].isFinal;
+        let finalTrans = '', interimTrans = '';
+        for (let i = 0; i < e.results.length; i++) {
+          if (e.results[i].isFinal) finalTrans += (finalTrans ? ' ' : '') + e.results[i][0].transcript.trim();
+          else interimTrans += (interimTrans ? ' ' : '') + e.results[i][0].transcript.trim();
+        }
+        const t = finalTrans || interimTrans;
+        const isFinal = !!finalTrans;
         addLog(`✨ ĐÃ NGHE ĐƯỢC: "${t}" (${isFinal ? 'Chốt câu' : 'Đang nói...'})`);
       };
       diagRec.onerror = (e) => {
@@ -1499,7 +1538,7 @@
         addLog('🔄 [Tự động duy trì] Tiếp tục nghe câu tiếp theo...');
         setTimeout(() => {
           if (isDiagRunning) createAndStartDiagSession(lang, logBox, btn, addLog);
-        }, 350);
+        }, isMobile ? 300 : 200);
       };
 
       diagRec.start();
